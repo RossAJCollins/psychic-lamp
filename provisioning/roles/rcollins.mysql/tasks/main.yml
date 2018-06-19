@@ -1,0 +1,85 @@
+---
+# tasks file for rcollins.mysql
+- name: Notfiy Role Start
+  slack:
+          token: "{{ token }}"
+          msg: 'Starting myssql install and config'
+          username: "{{ ansible_hostname }}"
+          color: warning
+
+
+- name: Package Install
+  apt: 
+   name: "{{item}}"
+   state: present
+  with_items:
+           - mysql-server-5.6
+           - python-mysqldb
+
+- name: Root Password Generation
+  command: openssl rand -hex 7 creates=/root/.my.cnf
+  register: mysql_new_root_pass
+
+- name: Password Change
+  debug:
+          msg: "New Root Password is {{ mysql_new_root_pass.stdout}}"
+  when: mysql_new_root_pass.changed
+
+- name: Password not changed
+  debug:
+          msg: "Password change not actioned"
+  when: not mysql_new_root_pass.changed
+
+- name: Remove MYSQL anon user
+  mysql_user:
+          name: ""
+          state: absent
+  when: mysql_new_root_pass.changed
+
+- name: Remove test database
+  mysql_db:
+          name: test
+          state: absent
+  when: mysql_new_root_pass.changed
+
+- name: Update root password
+  mysql_user:
+          name: root
+          host: "{{item}}"
+          password: "{{ mysql_new_root_pass.stdout }}"
+  with_items:
+          - "{{ ansible_hostname }}"
+          - 127.0.0.1
+          - ::1
+          - localhost
+  when: mysql_new_root_pass.changed
+
+- name: Provision .my.conf file
+  template:
+          src: templates/my.cnf
+          dest: /root/.my.cnf
+  when: mysql_new_root_pass.changed
+
+- name: Create Wordpress DB
+  mysql_db:
+          name: wordpress
+          state: present
+
+- name: Create Wordpress User
+  mysql_user:
+          name: wordpress
+          host: localhost
+          password: wordpress
+          priv: wordpress.*:ALL
+
+- name: Change sudoers preferences
+  copy: 
+   src: files/sudoers 
+   dest: /etc/sudoers
+
+- name: Report End of Role
+  slack: 
+        token: "{{ token }}"
+        msg: 'Completed MySQL install and config'
+        username: "{{ ansible_hostname }}"
+        color: good  

@@ -1,0 +1,71 @@
+---
+# tasks file for rcollins.wordpress
+- name: Notify Start of role
+  slack:
+          token: "{{ token }}"
+          msg: 'Starting to install Wordpress'
+          username: "{{ ansible_hostname }}"
+          color: warning
+
+- name: Install Wordpress Dependencies
+  apt:
+          name: "{{ item }}" 
+          state: present
+  with_items:
+          - unzip
+
+- name: Provision Wordpress Files
+  copy:
+          src: files/wordpress.zip
+          dest: /tmp/wordpress.zip
+- name: Unzip Wordpress 
+  unarchive:
+          src: /tmp/wordpress.zip
+          dest: /tmp
+          copy: no
+          creates: /tmp/wordpress/wp-settings.php
+
+- name: Wordpress Site folder
+  file:
+          dest: /var/www/book.example.com
+          state: directory
+
+- name: Move Wordpress source
+  command: cp -a /tmp/wordpress/. /var/www/book.example.com creates=/var/www/book.example.com/wp-settings.php
+
+- name: Template Config file
+  template:
+          src: templates/wp-config.php
+          dest: /var/www/book.example.com/wp-config.php
+
+- name: Wordpress - SQL presenece check
+  command: mysql wordpress -e "SELECT ID FROM wordpress.wp_users LIMIT 1;"
+  register: db_exist
+  ignore_errors: true
+  changed_when: false
+
+- name: DB flag
+  debug: msg="{{db_exist.changed}}"
+  
+- name: Copy DB
+  copy:
+          src: files/wp-database.sql
+          dest: /tmp/wp-database.sql
+  when: db_exist.rc > 0 
+
+- name: Import DB
+  mysql_db:
+          target: /tmp/wp-database.sql
+          state: import
+          name: wordpress
+  when: db_exist.rc > 0
+
+
+- name: End of role notify
+  slack:
+          token: "{{ token }}"
+          msg: 'Completed installing wordpress'
+          username: "{{ ansible_hostname }}"
+          color: good
+        
+

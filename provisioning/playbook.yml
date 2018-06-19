@@ -1,0 +1,27 @@
+---
+- hosts: all
+  become: true
+  vars_files:
+          - vars/slack.yml
+
+  pre_tasks:
+   - name: Notifying Run
+     slack:
+             token: "{{ token }}"
+             msg: 'Ansible Provisioning Run Started on {{ ansible_hostname }} @ {{ inventory_hostname }}'
+             color: danger
+             username: "Ansible Server RossLab"
+  roles:
+          - rcollins.php
+          - rcollins.nginx
+          - rcollins.mysql
+          - rcollins.wordpress
+
+  post_tasks:
+
+   - name: Post Run Report
+     slack:
+            token: "{{ token }}"
+            msg: "Ansible Provisioning Run has completed on {{ ansible_hostname }} @ {{ inventory_hostname }}"
+            color: good
+            username: "Ansible Server RossLab"

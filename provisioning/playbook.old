@@ -1,0 +1,148 @@
+---
+- hosts: all
+  become: true
+  tasks:
+   
+   - name: Install Dependencies
+     apt: name={{item}} state=present
+     with_items:
+       - unzip
+          
+   - name: Connectivity Test
+     ping:
+
+             #PHP
+
+   - name: Add PPA
+     apt_repository: repo='ppa:ondrej/php'
+   - name: Update AptCache
+     apt: update_cache=yes cache_valid_time=3600
+   - name: Install PHP
+     apt: name={{item}} state=present
+     with_items:
+             - php
+             - php-fpm
+             - php-mysql
+             - php-xml
+   - name: Remove apache2
+     apt: name=apache2 state=absent
+     
+  
+  
+             #MySQL
+
+  
+  
+   - name: Install MySQL
+     apt: name={{item}} state=present
+     with_items:
+             - mysql-server-5.6
+             - python-mysqldb   
+   
+   - name: MYSQL- Generate new Root Password
+     command: openssl rand -hex 7 creates=/root/.my.cnf
+     register: mysql_new_root_pass
+     
+   - name: Password Change
+     debug: msg="New root Password is {{ mysql_new_root_pass.stdout }}"
+     when: mysql_new_root_pass.changed
+   
+   - name: Password not Changed
+     debug: msg="No Password Change"
+     when: not mysql_new_root_pass.changed
+   
+   - name: MYSQL- Remove MySQl anon
+     mysql_user: name="" state=absent
+     when: mysql_new_root_pass.changed
+   
+   - name: MYSQL- Remove test database
+     mysql_db: name=test state=absent
+     when: mysql_new_root_pass.changed
+   
+   - name: MYSQL- Update root password
+     mysql_user: name=root host={{item}} password={{ mysql_new_root_pass.stdout }}
+     with_items:
+      - "{{ ansible_hostname }}"
+      - 127.0.0.1
+      - ::1
+      - localhost
+     when: mysql_new_root_pass.changed
+   
+   - name: Output new root Password
+     debug: msg="New root password is {{ mysql_new_root_pass.stdout }}"
+     when: mysql_new_root_pass.changed
+     
+   - name: MYSQL- Create my.cnf
+     template: src=templates/mysql/my.cnf dest=/root/.my.cnf
+     when: mysql_new_root_pass.changed
+   
+   - name: MYSQL- Create Wordpress DB
+     mysql_db:
+             name: wordpress
+             state: present
+   - name: MySQL - Create Wordpress user
+     mysql_user:
+             name: wordpress
+             host: localhost
+             password: wordpress
+             priv: wordpress.*:ALL
+   - name: MySQl Change Sudoers to allow .m.cnf
+     copy:
+         src: files/sudoers
+         dest: /etc/sudoers
+
+               # nginx
+  
+  
+   - name: Nginx- Install
+     apt: name=nginx state=present
+   - name: Nginx- Service Start
+     service: name=nginx state=started
+   - name: Nginx- Create nginX config
+     template: src=templates/nginx/default dest=/etc/nginx/sites-available/default
+     notify: restart nginx
+     
+                #Wordpress
+   - name: Provision Wordpress files
+     copy: 
+        src: files/wordpress.zip 
+        dest: /tmp/wordpress.zip
+   - name: Wordpress- Unzip
+     unarchive:
+             src: /tmp/wordpress.zip
+             dest: /tmp
+             copy: no
+             creates: /tmp/wordpress/wp-settings.php
+
+   - name: Wordpress create site folder
+     file:
+             dest: /var/www/book.example.com
+             state: directory
+   - name: Wordpress - Copy Wordpress source
+     command: cp -a /tmp/wordpress/. /var/www/book.example.com creates=/var/www/book.example.com/wp-settings.php
+   - name: Wordpress - copy wp-config.php
+     template:
+      src: templates/wordpress/wp-config.php
+      dest: /var/www/book.example.com/wp-config.php
+   - name: Wordpress - Database check
+     command: mysql wordpress -e "SELECT ID FROM wordpress.wp_users LIMIT 1;"
+     register: db_exist
+     ignore_errors: true
+     changed_when: false
+   - name: Database flag
+     debug: msg="{{db_exist.changed}}"   
+   - name: Copy database
+     copy:
+             src: files/wp-database.sql
+             dest: /tmp/wp-database.sql
+     when: db_exist.rc > 0
+   - name: Import database
+     mysql_db:
+             target: /tmp/wp-database.sql
+             state: import
+             name: wordpress
+     when: db_exist.rc > 0
+
+  handlers:
+   - name: restart nginx
+     service: name=nginx state=restarted

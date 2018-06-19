@@ -1,0 +1,29 @@
+---
+# tasks file for rcollins.nginx
+- name: Role Start Report
+  slack:
+          token: "{{ token }}"
+          msg: 'Starting to install nginX'
+          username: "{{ ansible_hostname }}"
+          color: warning
+
+- name: Install nginx Package
+  apt:
+          name: nginx
+          state: present
+- name: Start Service
+  service:
+          name: nginx
+          state: started
+- name: Create Config
+  template:
+          src: default
+          dest: /etc/nginx/sites-available/default
+  notify: restart nginx
+
+- name: Role End Report
+  slack:
+          token: "{{ token }}"
+          msg: 'Completed installing nginX'
+          username: "{{ ansible_hostname }}"
+          color: good
